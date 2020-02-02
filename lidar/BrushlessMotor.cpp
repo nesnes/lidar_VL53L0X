@@ -47,9 +47,9 @@ void BrushlessMotor::begin(){
 	pinMode(m_pinC, OUTPUT);
 }
 
-void BrushlessMotor::spinDegrees(float degrees)
+void BrushlessMotor::spinDegrees(float degrees, float divider)
 {
-  int sleep = 500;//400
+  int sleep = 400;//400
   float currDegrees=0;
   unsigned long now = micros();
   
@@ -79,9 +79,9 @@ void BrushlessMotor::spinDegrees(float degrees)
 	   
 		//lastMotorDelayTime = now;
 		//}  
-		analogWrite(m_pinA, m_pwmSin[m_currentStepA]/1.5);
-		analogWrite(m_pinB, m_pwmSin[m_currentStepB]/1.5);
-		analogWrite(m_pinC, m_pwmSin[m_currentStepC]/1.5);
+		analogWrite(m_pinA, m_pwmSin[m_currentStepA]/divider);
+		analogWrite(m_pinB, m_pwmSin[m_currentStepB]/divider);
+		analogWrite(m_pinC, m_pwmSin[m_currentStepC]/divider);
 		if(sleep>0)
 			delayMicroseconds(sleep);
 		currDegrees += (degrees>0)?0.275:-0.275;

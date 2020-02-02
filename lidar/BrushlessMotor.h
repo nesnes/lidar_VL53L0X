@@ -12,7 +12,7 @@ public:
   
   void begin();
   
-  void spinDegrees(float degrees);
+  void spinDegrees(float degrees, float divider=1.5f);
 
 
 private:

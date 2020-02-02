@@ -5,6 +5,13 @@
  * The result are sent on the serial monitor as a list of angles and distances.
 */
 
+#//define MODE_I2C
+#ifndef MODE_I2C
+  #define MODE_SERIAL
+  //#define SERIAL_DEBUG
+#endif
+#include "comunication.h"
+
 #include <Wire.h>
 #include "SoftwareWire.h"
 #include "VL53L0X.h"
@@ -48,7 +55,7 @@ void initialCalibration(){
   delay(250);
   //Find end stop approximately
   while(digitalRead(CALIBRATION_SWITCH_PIN)==LOW){
-    motor.spinDegrees(-1);
+    motor.spinDegrees(-1, 1);
     delay(50);
   }
   //Move away from end stop
@@ -56,17 +63,17 @@ void initialCalibration(){
   delay(250);
   //Find end stop precisely
   while(digitalRead(CALIBRATION_SWITCH_PIN)==LOW){
-    motor.spinDegrees(-0.2);
+    motor.spinDegrees(-0.2, 1);
     delay(50);
   }
   //Move to start position
-  motor.spinDegrees(25);
+  motor.spinDegrees(2, 1);
 }
 
 void setup()
 {
   pinMode(CALIBRATION_SWITCH_PIN, INPUT);
-  Serial.begin(115200);
+  comunication_begin(8);//I2C address 8
 
   //Disable Sensors
   for(int i=0;i<SENSOR_COUNT;i++){
@@ -130,15 +137,65 @@ void setup()
   initialCalibration();
 }
 
+#define MEASURE_COUNT 3*SENSOR_COUNT 
+#define MEASURE_STEP 20
+uint8_t currentMeasures[360];//cm
+
+void executeOrder(){
+  comunication_read();
+  if(comunication_msgAvailable()){
+    if(comunication_InBuffer[0] == '\0'){
+      //ignore
+    }
+    else if(comunication_InBuffer[0] == '#' && comunication_InBuffer[1] != '\0'){
+      //ignore
+    }
+    else if(strstr(comunication_InBuffer, "id")){
+      sprintf(comunication_OutBuffer, "CollisionDetectionLidar");//max 29 Bytes
+      comunication_write();//async
+    }
+    else if(strstr(comunication_InBuffer, "distances get")){
+      //D Step A1 A2... in binary, not text, no separator
+      comunication_OutBuffer[0] = 'D';
+      comunication_OutBuffer[1] = MEASURE_STEP;
+      for(int j=0;j<MEASURE_COUNT;j++){
+        int angle = j*MEASURE_STEP;
+        if(angle>=360) angle = 0;
+        uint8_t val = currentMeasures[angle];
+        if(val==0) val = 1;//avoid unexpected \0 in string
+        if(val==COMUNICATION_START_BYTE) val = COMUNICATION_START_BYTE-1;//avoid unexpected START BYTE in string
+        if(val==COMUNICATION_END_BYTE) val = COMUNICATION_END_BYTE-1;//avoid unexpected END BYTE in string
+        comunication_OutBuffer[j+2] = val;
+        #ifdef SERIAL_DEBUG
+          Serial.print(angle);
+          Serial.print(" ");
+          Serial.print(val);
+          Serial.print("\n");
+        #endif
+      }
+      comunication_write();//async
+    }
+    else{
+      sprintf(comunication_OutBuffer,"ERROR");
+      comunication_write();//async
+    }
+    comunication_cleanInputs();
+  }
+}
+
 int curr_angle=0;
 int dir=1;
 void loop()
 {
-  
-  if(curr_angle%10==0){
+  //Read commands
+  executeOrder();
+
+  //Spin and measure
+  if(curr_angle%MEASURE_STEP==0){
       for(int j=0;j<SENSOR_COUNT;j++){
         uint16_t value=0;
         int angle=sensorAngle[j] + curr_angle;
+        if(angle>=360) angle = 0;
         
         if(sensorDisabled[j]) continue;
         
@@ -147,13 +204,16 @@ void loop()
         #else
           value=sensors[j].readRangeSingleMillimeters();
         #endif
+        value/=10;//to cm
         if (sensors[j].timeoutOccurred()) { value=0; }
-        if(j>0) Serial.print(";");
+        else value = currentMeasures[angle]*0.5 + value*0.5;
+        currentMeasures[angle] = value;
+        /*if(j>0) Serial.print(";");
         Serial.print(angle);
         Serial.print(" ");
-        Serial.print(value);
+        Serial.print(value);*/
       }
-      Serial.println();
+      //Serial.println();
   }
   motor.spinDegrees(dir);
   curr_angle+=dir;
